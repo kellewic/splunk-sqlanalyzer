@@ -1,0 +1,350 @@
+<form version="1.1">
+  <label>SQL Analysis</label>
+  <search id="base">
+    <query>
+index="main" sourcetype="redshift"
+
+``` remove garbage ```
+| eval _raw=replace(_raw, "[\r\n]initiating [\s\S]+$", "")
+| where match(_raw, "\[ db=")
+
+``` extract fields ```
+| rex "\[ db=(?&lt;db&gt;[^\s]+) user=(?&lt;user&gt;[^\s]+) pid=(?&lt;pid&gt;[^\s]+) userid=(?&lt;userid&gt;[^\s]+) xid=(?&lt;xid&gt;[^\s]+) \].+?LOG: (?&lt;query&gt;[\s\S]+$)"
+
+``` put query in correct order ```
+| rex max_match=0 field=query "(?&lt;query2&gt;[^\n]+)"
+| eval id=mvrange(-2147483648,(2147483648-mvcount(query2))*(-1))
+| rex field=id mode=sed "s/-//g"
+| eval query2=mvsort(mvzip(id, query2, "|"))
+| rex field=query2 mode=sed "s/\d+[\r\n]*\|//g"
+| eval query=replace(mvjoin(query2, " "), "[\s]{2,}", " ")
+| fields - query2, id
+
+``` normalize query ```
+| eval query=lower(query)
+| eval query_hash=md5(query)
+| sqlanalyzer dialect=postgres query
+| eval db=if(isnotnull(sqlacc_databases), mvappend(db, sqlacc_databases), db)
+    </query>
+    <earliest>$global_time.earliest$</earliest>
+    <latest>$global_time.latest$</latest>
+  </search>
+  <fieldset submitButton="false">
+    <input type="time" token="global_time" searchWhenChanged="true">
+      <label>Global Time Range</label>
+      <default>
+        <earliest>1660953600</earliest>
+        <latest>1660957200</latest>
+      </default>
+    </input>
+  </fieldset>
+  <row>
+    <panel>
+      <single>
+        <title>Unique Transactions</title>
+        <search base="base">
+          <query>| timechart dc(xid) as transaction</query>
+        </search>
+        <option name="colorBy">trend</option>
+        <option name="colorMode">none</option>
+        <option name="drilldown">none</option>
+        <option name="rangeColors">["0x53a051","0x0877a6","0xf8be34","0xf1813f","0xdc4e41"]</option>
+        <option name="trendColorInterpretation">standard</option>
+        <option name="trendDisplayMode">percent</option>
+        <option name="trendInterval">-24h</option>
+        <option name="useColors">1</option>
+      </single>
+      <single>
+        <title>Total Unique Transactions</title>
+        <search base="base">
+          <query>| stats dc(xid)</query>
+        </search>
+        <option name="colorBy">trend</option>
+        <option name="colorMode">none</option>
+        <option name="drilldown">none</option>
+        <option name="rangeColors">["0x53a051","0x0877a6","0xf8be34","0xf1813f","0xdc4e41"]</option>
+        <option name="trendColorInterpretation">standard</option>
+        <option name="trendDisplayMode">percent</option>
+        <option name="trendInterval">-24h</option>
+        <option name="useColors">0</option>
+      </single>
+    </panel>
+    <panel>
+      <chart>
+        <title>All Events</title>
+        <search base="base">
+          <query>| timechart c as events</query>
+        </search>
+        <option name="charting.axisTitleX.visibility">collapsed</option>
+        <option name="charting.axisTitleY.text">Events</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.showDataLabels">none</option>
+      </chart>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <single>
+        <title>Unique Queries</title>
+        <search base="base">
+          <query>| timechart dc(query) as queries</query>
+        </search>
+        <option name="colorBy">trend</option>
+        <option name="colorMode">none</option>
+        <option name="drilldown">none</option>
+        <option name="rangeColors">["0x53a051","0x0877a6","0xf8be34","0xf1813f","0xdc4e41"]</option>
+        <option name="trendColorInterpretation">standard</option>
+        <option name="trendDisplayMode">percent</option>
+        <option name="trendInterval">-24h</option>
+        <option name="useColors">1</option>
+      </single>
+      <single>
+        <title>Total Unique Queries</title>
+        <search base="base">
+          <query>| stats dc(query)</query>
+        </search>
+        <option name="colorBy">trend</option>
+        <option name="colorMode">none</option>
+        <option name="drilldown">none</option>
+        <option name="rangeColors">["0x53a051","0x0877a6","0xf8be34","0xf1813f","0xdc4e41"]</option>
+        <option name="trendColorInterpretation">standard</option>
+        <option name="trendDisplayMode">percent</option>
+        <option name="trendInterval">-24h</option>
+        <option name="useColors">0</option>
+      </single>
+    </panel>
+    <panel>
+      <chart>
+        <title>Top 10 Queries</title>
+        <search base="base">
+          <query>| timechart limit=10 useother=f usenull=f c by query</query>
+        </search>
+        <option name="charting.axisTitleX.visibility">collapsed</option>
+        <option name="charting.axisTitleY.text">Queries</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.showDataLabels">none</option>
+      </chart>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <single>
+        <title>Unique Users</title>
+        <search base="base">
+          <query>| timechart dc(user) as users</query>
+        </search>
+        <option name="colorBy">trend</option>
+        <option name="colorMode">none</option>
+        <option name="drilldown">none</option>
+        <option name="rangeColors">["0x53a051","0x0877a6","0xf8be34","0xf1813f","0xdc4e41"]</option>
+        <option name="trendColorInterpretation">standard</option>
+        <option name="trendDisplayMode">percent</option>
+        <option name="trendInterval">-24h</option>
+        <option name="useColors">1</option>
+      </single>
+      <single>
+        <title>Total Unique Users</title>
+        <search base="base">
+          <query>| stats dc(user)</query>
+        </search>
+        <option name="colorBy">trend</option>
+        <option name="colorMode">none</option>
+        <option name="drilldown">none</option>
+        <option name="rangeColors">["0x53a051","0x0877a6","0xf8be34","0xf1813f","0xdc4e41"]</option>
+        <option name="trendColorInterpretation">standard</option>
+        <option name="trendDisplayMode">percent</option>
+        <option name="trendInterval">-24h</option>
+        <option name="useColors">0</option>
+      </single>
+    </panel>
+    <panel>
+      <chart>
+        <title>Top 10 Users</title>
+        <search base="base">
+          <query>| timechart limit=10 useother=f usenull=f c by user</query>
+        </search>
+        <option name="charting.axisTitleX.visibility">collapsed</option>
+        <option name="charting.axisTitleY.text">Users</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.showDataLabels">none</option>
+      </chart>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <single>
+        <title>Unique Databases</title>
+        <search base="base">
+          <query>| timechart dc(db) as databases</query>
+        </search>
+        <option name="colorBy">trend</option>
+        <option name="colorMode">none</option>
+        <option name="drilldown">none</option>
+        <option name="rangeColors">["0x53a051","0x0877a6","0xf8be34","0xf1813f","0xdc4e41"]</option>
+        <option name="trendColorInterpretation">standard</option>
+        <option name="trendDisplayMode">percent</option>
+        <option name="trendInterval">-24h</option>
+        <option name="useColors">1</option>
+      </single>
+      <single>
+        <title>Total Unique Databases</title>
+        <search base="base">
+          <query>| stats dc(db)</query>
+        </search>
+        <option name="colorBy">trend</option>
+        <option name="colorMode">none</option>
+        <option name="drilldown">none</option>
+        <option name="rangeColors">["0x53a051","0x0877a6","0xf8be34","0xf1813f","0xdc4e41"]</option>
+        <option name="trendColorInterpretation">standard</option>
+        <option name="trendDisplayMode">percent</option>
+        <option name="trendInterval">-24h</option>
+        <option name="useColors">0</option>
+      </single>
+    </panel>
+    <panel>
+      <chart>
+        <title>Top 10 Databases</title>
+        <search base="base">
+          <query>| timechart limit=10 useother=f usenull=f c by db</query>
+        </search>
+        <option name="charting.axisTitleX.visibility">collapsed</option>
+        <option name="charting.axisTitleY.text">Databases</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.showDataLabels">none</option>
+      </chart>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <single>
+        <title>Unique Tables</title>
+        <search base="base">
+          <query>| timechart dc(sqlacc_tables) as tables</query>
+        </search>
+        <option name="colorBy">trend</option>
+        <option name="colorMode">none</option>
+        <option name="drilldown">none</option>
+        <option name="rangeColors">["0x53a051","0x0877a6","0xf8be34","0xf1813f","0xdc4e41"]</option>
+        <option name="trendColorInterpretation">standard</option>
+        <option name="trendDisplayMode">percent</option>
+        <option name="trendInterval">-24h</option>
+        <option name="useColors">1</option>
+      </single>
+      <single>
+        <title>Total Unique Tables</title>
+        <search base="base">
+          <query>| stats dc(sqlacc_tables)</query>
+        </search>
+        <option name="colorBy">trend</option>
+        <option name="colorMode">none</option>
+        <option name="drilldown">none</option>
+        <option name="rangeColors">["0x53a051","0x0877a6","0xf8be34","0xf1813f","0xdc4e41"]</option>
+        <option name="trendColorInterpretation">standard</option>
+        <option name="trendDisplayMode">percent</option>
+        <option name="trendInterval">-24h</option>
+        <option name="useColors">0</option>
+      </single>
+    </panel>
+    <panel>
+      <chart>
+        <title>Top 10 Tables</title>
+        <search base="base">
+          <query>| timechart limit=10 useother=f usenull=f c by sqlacc_tables</query>
+        </search>
+        <option name="charting.axisTitleX.visibility">collapsed</option>
+        <option name="charting.axisTitleY.text">Databases</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.showDataLabels">none</option>
+      </chart>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <single>
+        <title>Unique Projections</title>
+        <search base="base">
+          <query>| timechart dc(sqlacc_projections) as projections</query>
+        </search>
+        <option name="colorBy">trend</option>
+        <option name="colorMode">none</option>
+        <option name="drilldown">none</option>
+        <option name="rangeColors">["0x53a051","0x0877a6","0xf8be34","0xf1813f","0xdc4e41"]</option>
+        <option name="trendColorInterpretation">standard</option>
+        <option name="trendDisplayMode">percent</option>
+        <option name="trendInterval">-24h</option>
+        <option name="useColors">1</option>
+      </single>
+      <single>
+        <title>Total Unique Projections</title>
+        <search base="base">
+          <query>| stats dc(sqlacc_projections)</query>
+        </search>
+        <option name="colorBy">trend</option>
+        <option name="colorMode">none</option>
+        <option name="drilldown">none</option>
+        <option name="rangeColors">["0x53a051","0x0877a6","0xf8be34","0xf1813f","0xdc4e41"]</option>
+        <option name="trendColorInterpretation">standard</option>
+        <option name="trendDisplayMode">percent</option>
+        <option name="trendInterval">-24h</option>
+        <option name="useColors">0</option>
+      </single>
+    </panel>
+    <panel>
+      <chart>
+        <title>Top 10 Projections</title>
+        <search base="base">
+          <query>| timechart limit=10 useother=f usenull=f c by sqlacc_projections</query>
+        </search>
+        <option name="charting.axisTitleX.visibility">collapsed</option>
+        <option name="charting.axisTitleY.text">Databases</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.showDataLabels">none</option>
+      </chart>
+    </panel>
+  </row>
+  
+  <row>
+    <panel>
+      <single>
+        <title>Unique Functions</title>
+        <search base="base">
+          <query>| timechart dc(sqlacc_functions) as functions</query>
+        </search>
+        <option name="colorBy">trend</option>
+        <option name="colorMode">none</option>
+        <option name="drilldown">none</option>
+        <option name="rangeColors">["0x53a051","0x0877a6","0xf8be34","0xf1813f","0xdc4e41"]</option>
+        <option name="trendColorInterpretation">standard</option>
+        <option name="trendDisplayMode">percent</option>
+        <option name="trendInterval">-24h</option>
+        <option name="useColors">1</option>
+      </single>
+      <single>
+        <title>Total Unique Functions</title>
+        <search base="base">
+          <query>| stats dc(sqlacc_functions)</query>
+        </search>
+        <option name="colorBy">trend</option>
+        <option name="colorMode">none</option>
+        <option name="drilldown">none</option>
+        <option name="rangeColors">["0x53a051","0x0877a6","0xf8be34","0xf1813f","0xdc4e41"]</option>
+        <option name="trendColorInterpretation">standard</option>
+        <option name="trendDisplayMode">percent</option>
+        <option name="trendInterval">-24h</option>
+        <option name="useColors">0</option>
+      </single>
+    </panel>
+    <panel>
+      <chart>
+        <title>Top 10 Functions</title>
+        <search base="base">
+          <query>| timechart limit=10 useother=f usenull=f c by sqlacc_functions</query>
+        </search>
+        <option name="charting.axisTitleX.visibility">collapsed</option>
+        <option name="charting.axisTitleY.text">Databases</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.showDataLabels">none</option>
+      </chart>
+    </panel>
+  </row>
+</form>
